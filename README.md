@@ -4,13 +4,24 @@ Tortoise is a text-to-speech program built with the following priorities:
 
 1. Strong multi-voice capabilities.
 2. Highly realistic prosody and intonation.
-
+   
 This repo contains all the code needed to run Tortoise TTS in inference mode.
 
 Manuscript: https://arxiv.org/abs/2305.07243
 
 ### Version history
+#### v2.7; 2023/7/26
+- Bug fixes
+- Added Apple Silicon Support
+- Updated Transformer version
+#### v2.6; 2023/7/26
+- Bug fixes
 
+#### v2.5; 2023/7/09
+- Added kv_cache support 5x faster
+- Added deepspeed support 10x faster
+- Added half precision support
+  
 #### v2.4; 2022/5/17
 - Removed CVVP model. Found that it does not, in fact, make an appreciable difference in the output.
 - Add better debugging support; existing tools now spit out debug files which can be used to reproduce bad runs.
@@ -80,6 +91,63 @@ Optionally, pytorch can be installed in the base environment, so that other cond
 
 If you are on windows, you may also need to install pysoundfile: `conda install -c conda-forge pysoundfile`
 
+### Docker
+
+An easy way to hit the ground running and a good jumping off point depending on your use case.
+
+```sh
+git clone https://github.com/neonbjb/tortoise-tts.git
+cd tortoise-tts
+
+docker build . -t tts
+
+docker run --gpus all \
+    -e TORTOISE_MODELS_DIR=/models \
+    -v /mnt/user/data/tortoise_tts/models:/models \
+    -v /mnt/user/data/tortoise_tts/results:/results \
+    -v /mnt/user/data/.cache/huggingface:/root/.cache/huggingface \
+    -v /root:/work \
+    -it tts
+```
+This gives you an interactive terminal in an environment that's ready to do some tts. Now you can explore the different interfaces that tortoise exposes for tts.
+
+For example:
+
+```sh
+cd app
+conda activate tortoise
+time python tortoise/do_tts.py \
+    --output_path /results \
+    --preset ultra_fast \
+    --voice geralt \
+    --text "Time flies like an arrow; fruit flies like a bananna."
+```
+
+## Apple Silicon
+
+On MacOS 13+ with M1/M2 chips you need to install the nighly version of pytorch, as stated in the official page you can do:
+
+```shell
+pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
+```
+
+Be sure to do that after you activate the environment. If you don't use conda the commands would look like this:
+
+```shell
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install numba inflect
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
+pip install transformers
+git clone https://github.com/neonbjb/tortoise-tts.git
+cd tortoise-tts
+pip install .
+```
+
+Be aware that DeepSpeed is disabled on Apple Silicon since it does not work. The flag `--use_deepspeed` is ignored.
+You may need to prepend `PYTORCH_ENABLE_MPS_FALLBACK=1` to the commands below to make them work since MPS does not support all the operations in Pytorch.
+
+
 ### do_tts.py
 
 This script allows you to speak a single phrase with one or more voices.
@@ -112,6 +180,36 @@ tts = api.TextToSpeech()
 pcm_audio = tts.tts_with_preset("your text here", voice_samples=reference_clips, preset='fast')
 ```
 
+To use deepspeed:
+
+```python
+reference_clips = [utils.audio.load_audio(p, 22050) for p in clips_paths]
+tts = api.TextToSpeech(use_deepspeed=True)
+pcm_audio = tts.tts_with_preset("your text here", voice_samples=reference_clips, preset='fast')
+```
+
+To use kv cache:
+
+```python
+reference_clips = [utils.audio.load_audio(p, 22050) for p in clips_paths]
+tts = api.TextToSpeech(kv_cache=True)
+pcm_audio = tts.tts_with_preset("your text here", voice_samples=reference_clips, preset='fast')
+```
+
+To run model in float16:
+
+```python
+reference_clips = [utils.audio.load_audio(p, 22050) for p in clips_paths]
+tts = api.TextToSpeech(half=True)
+pcm_audio = tts.tts_with_preset("your text here", voice_samples=reference_clips, preset='fast')
+```
+for Faster runs use all three:
+
+```python
+reference_clips = [utils.audio.load_audio(p, 22050) for p in clips_paths]
+tts = api.TextToSpeech(use_deepspeed=True, kv_cache=True, half=True)
+pcm_audio = tts.tts_with_preset("your text here", voice_samples=reference_clips, preset='fast')
+```
 ## Voice customization guide
 
 Tortoise was specifically trained to be a multi-speaker model. It accomplishes this by consulting reference clips.
